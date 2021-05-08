@@ -2,6 +2,7 @@
 #define SWITCH_H
 
 #define MAX_SWITCH_NAME_LENGTH 20
+#define IP_LENGTH 15
 
 
 struct t_port_values
@@ -33,6 +34,7 @@ struct t_port_list
 struct t_switch
 {
     char name[MAX_SWITCH_NAME_LENGTH];
+    char ip[IP_LENGTH];
     struct t_port_list * port_list;
 };
 

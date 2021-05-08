@@ -127,6 +127,7 @@ void switch_print_list(struct t_switch_list *head)
     while (current_sw_list != NULL)
     {
         printf("Switch:%s\n", current_sw_list->sw.name);
+        printf("\tIp: %s\n", current_sw_list->sw.ip);
 
         struct t_port_list *current_port_list = current_sw_list->sw.port_list;
 

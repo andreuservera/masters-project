@@ -70,6 +70,17 @@ static void read_json(const json *node, void* list)
 
         strcpy(current_switch.name, json_string(data_switch));
 
+        json *data_ip = json_node(node, "ip");
+        if (json_is_string(data_ip))
+        {
+            strcpy(current_switch.ip, json_string(data_ip));
+        }
+        else
+        {
+            printf("[ERROR]Missing ip from switch [%s]...\n", json_string(data_switch));
+            exit(1);
+        }
+
         json *data_port_list = json_node(node, "port_list");
         if (json_is_array(data_port_list))
         {
@@ -88,7 +99,7 @@ static void read_json(const json *node, void* list)
         }
         else
         {
-            printf("[ERROR]Missing port list in switch [%s]...\n", json_string(data_switch)); // TODO: test
+            printf("[ERROR]Missing port list in switch [%s]...\n", json_string(data_switch));
             exit(1);
         }
 
@@ -150,84 +161,79 @@ static void xml_write_values_end(FILE * file_pointer, float hypercycle)
 
 }
 
-static void xml_write_instance(struct t_switch_list * switch_list)
+static void xml_write_instance(struct t_switch_list * current_switch)
 {
-    struct t_switch_list *current_switch = switch_list;
 
-    while (current_switch != NULL)
+    char name_file[MAX_SWITCH_NAME_LENGTH+4];
+    char path[10+MAX_SWITCH_NAME_LENGTH+4] = {"../generated-configs/"};
+    sprintf(name_file,"%s.xml", current_switch->sw.name);
+    strcat(path, name_file);
+    FILE * fpointer = fopen(path,"w");
+
+    fprintf(fpointer,"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+    fprintf(fpointer,"<if:interfaces xmlns:if=\"urn:ietf:params:xml:ns:yang:ietf-interfaces\">\n");
+
+
+    struct t_port_list *current_port_list = current_switch->sw.port_list;
+
+    float hypercycle = 0;
+
+    while (current_port_list != NULL)
     {
-        char name_file[MAX_SWITCH_NAME_LENGTH+4];
-        char path[10+MAX_SWITCH_NAME_LENGTH+4] = {"../generated-configs/"};
-        sprintf(name_file,"%s.xml", current_switch->sw.name);
-        strcat(path, name_file);
-        FILE * fpointer = fopen(path,"w");
+        struct t_port_values_list *current_values_list = current_port_list->port.values;
 
-        fprintf(fpointer,"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
-        fprintf(fpointer,"<if:interfaces xmlns:if=\"urn:ietf:params:xml:ns:yang:ietf-interfaces\">\n");
-
-
-        struct t_port_list *current_port_list = current_switch->sw.port_list;
-
-        float hypercycle = 0;
-
-        while (current_port_list != NULL)
+        while (current_values_list != NULL)
         {
-            struct t_port_values_list *current_values_list = current_port_list->port.values;
-
-            while (current_values_list != NULL)
-            {
-                hypercycle =+ (float)current_values_list->values.period;
-                current_values_list = current_values_list->next;
-            }
-
-            current_port_list = current_port_list->next;
+            hypercycle =+ (float)current_values_list->values.period;
+            current_values_list = current_values_list->next;
         }
 
-
-        current_port_list = current_switch->sw.port_list;
-
-
-        while (current_port_list != NULL)
-        {
-            struct t_port_values_list *current_port_values_list = current_port_list->port.values;
-
-            // Calculate admin_control_list_length
-            int admin_control_list_length = 0;
-            while (current_port_values_list != NULL)
-            {
-                admin_control_list_length++;
-                current_port_values_list = current_port_values_list->next;
-            }
-
-            xml_write_port(fpointer,
-                           current_port_list->port.number,
-                           admin_control_list_length);
-
-            current_port_values_list = current_port_list->port.values;
-
-            int index = 0;
-            while (current_port_values_list != NULL)
-            {
-                xml_write_values(fpointer,
-                                 current_port_values_list->values.period,
-                                 binaryToDecimal(current_port_values_list->values.gate_states),
-                                 index);
-
-                index++;
-                current_port_values_list = current_port_values_list->next;
-            }
-
-            xml_write_values_end(fpointer, hypercycle);
-            current_port_list = current_port_list->next;
-        }
-
-        fprintf(fpointer,"</if:interfaces>\n");
-        fclose(fpointer);
-
-        current_switch = current_switch->next;
+        current_port_list = current_port_list->next;
     }
 
-    printf("XML instance generated correctly...\n");
+
+    current_port_list = current_switch->sw.port_list;
+
+
+    while (current_port_list != NULL)
+    {
+        struct t_port_values_list *current_port_values_list = current_port_list->port.values;
+
+        // Calculate admin_control_list_length
+        int admin_control_list_length = 0;
+        while (current_port_values_list != NULL)
+        {
+            admin_control_list_length++;
+            current_port_values_list = current_port_values_list->next;
+        }
+
+        xml_write_port(fpointer,
+                       current_port_list->port.number,
+                       admin_control_list_length);
+
+        current_port_values_list = current_port_list->port.values;
+
+        int index = 0;
+        while (current_port_values_list != NULL)
+        {
+            xml_write_values(fpointer,
+                             current_port_values_list->values.period,
+                             binaryToDecimal(current_port_values_list->values.gate_states),
+                             index);
+
+            index++;
+            current_port_values_list = current_port_values_list->next;
+        }
+
+        xml_write_values_end(fpointer, hypercycle);
+        current_port_list = current_port_list->next;
+    }
+
+    fprintf(fpointer,"</if:interfaces>\n");
+    fclose(fpointer);
+
+
+    printf("XML instance generated correctly: %s\n", name_file);
 }
 
 /**************************************************************************/
@@ -333,14 +339,20 @@ int main()
     struct t_switch_list* switch_list = switch_create_list();
 
        json *node = parse("../config.json");
-
        json_foreach(node, (void*)switch_list, read_json);
-
        json_free(node);
 
        switch_print_list(switch_list);
 
-       xml_write_instance(switch_list);
+       struct t_switch_list *current_switch = switch_list;
+
+       // For each switch
+       while (current_switch != NULL)
+       {
+           xml_write_instance(current_switch);
+           current_switch = current_switch->next;
+       }
+
 
        free_switch_list(switch_list);
 

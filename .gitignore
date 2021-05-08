@@ -3,4 +3,5 @@ build-cnc-Desktop-Default/
 build-cnc-Desktop-Debug/
 build-cnc-Imported_Kit_temporary-Debug/
 generated-configs/
+*.user
 
