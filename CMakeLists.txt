@@ -23,6 +23,11 @@ if (NOT TARGET ssh)
                            INTERFACE_INCLUDE_DIRECTORIES "${LIBSSH_INCLUDE_DIR}")
 endif()
 
+# dependencies - libyang
+find_package(LibYANG REQUIRED)
+target_link_libraries(${PROJECT_NAME} ${LIBYANG_LIBRARIES})
+include_directories(${LIBYANG_INCLUDE_DIRS})
+
 # dependencies - libnetconf2
 find_package(LibNETCONF2 REQUIRED)
 if (NOT LIBNETCONF2_ENABLED_SSH AND NOT LIBNETCONF2_ENABLED_TLS)
@@ -30,12 +35,5 @@ if (NOT LIBNETCONF2_ENABLED_SSH AND NOT LIBNETCONF2_ENABLED_TLS)
 endif()
 target_link_libraries(${PROJECT_NAME} ${LIBNETCONF2_LIBRARIES})
 include_directories(${LIBNETCONF2_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/lib)
-
-
-#find_package(libnetconf2 REQUIRED)
-#include_directories(${LIBNETCONF2_INCLUDE_DIRS})
-#message(STATUS "-------> ${LIBNETCONF2_INCLUDE_DIRS}")
-
-
 target_link_libraries(${PROJECT_NAME} ${LIBNETCON2_LIBRARIES})
 

@@ -3,10 +3,27 @@
 #include "nc_client.h"
 #include <fcntl.h>
 
+#include "libyang/tree_data.h"
+
 #include "utils.h"
 #include "switch.h"
 #include "json.h"
 #include <ctype.h>
+
+void print_file(FILE *fptr)
+{
+    char c;
+
+    // Read contents from file
+    c = fgetc(fptr);
+    while (c != EOF)
+    {
+        printf ("%c", c);
+        c = fgetc(fptr);
+    }
+
+    fclose(fptr);
+}
 
 /**************************************************************************/
 /* Reading configuration file functions ***********************************/
@@ -239,12 +256,219 @@ static void xml_write_instance(struct t_switch_list * current_switch)
 /**************************************************************************/
 /* Libnetconf2 functions for rpc's ****************************************/
 /**************************************************************************/
-static int rpc_commands()
+static int
+cli_send_recv(struct nc_session *session, struct nc_rpc *rpc, FILE *output, NC_WD_MODE wd_mode)
+{
+    char *str, *model_data;
+    int ret = 0, ly_wd, mono;
+    int32_t msec;
+    uint16_t i, j;
+    uint64_t msgid;
+    struct lyd_node_anydata *any;
+    NC_MSG_TYPE msgtype;
+    struct nc_reply *reply;
+    struct nc_reply_data *data_rpl;
+    struct nc_reply_error *error;
+    struct timespec ts_start, ts_stop;
+    int output_flag = 0;
+
+
+    msgtype = nc_send_rpc(session, rpc, 1000, &msgid);
+    if (msgtype == NC_MSG_ERROR) {
+        printf("Failed to send the RPC: rpc_get_config\n");
+        return -1;
+    } else if (msgtype == NC_MSG_WOULDBLOCK) {
+        printf("Timeout for sending the RPC expired.\n");
+        return -1;
+    }
+
+recv_reply:
+    msgtype = nc_recv_reply(session, rpc, msgid, 20000,
+                            LYD_OPT_DESTRUCT | LYD_OPT_NOSIBLINGS, &reply);
+    if (msgtype == NC_MSG_ERROR) {
+        printf("Failed to receive a reply.\n");
+        return -1;
+    } else if (msgtype == NC_MSG_WOULDBLOCK) {
+        printf("Timeout for receiving a reply expired.\n");
+        return -1;
+    } else if (msgtype == NC_MSG_NOTIF) {
+        /* read again */
+        goto recv_reply;
+    } else if (msgtype == NC_MSG_REPLY_ERR_MSGID) {
+        /* unexpected message, try reading again to get the correct reply */
+        printf("Unexpected reply received - ignoring and waiting for the correct reply.");
+        nc_reply_free(reply);
+        goto recv_reply;
+    }
+
+
+
+    switch (reply->type) {
+    case NC_RPL_OK:
+        fprintf(output, "OK\n");
+        break;
+    case NC_RPL_DATA:
+        data_rpl = (struct nc_reply_data *)reply;
+
+        /* special case */
+        if (nc_rpc_get_type(rpc) == NC_RPC_GETSCHEMA) {
+            if (!data_rpl->data || (data_rpl->data->schema->nodetype != LYS_RPC) ||
+                (data_rpl->data->child == NULL) ||
+                (data_rpl->data->child->schema->nodetype != LYS_ANYXML)) {
+                printf("Unexpected data reply to <get-schema> RPC.\n");
+                ret = -1;
+                break;
+            }
+            if (output == stdout) {
+                fprintf(output, "MODULE\n");
+            }
+            any = (struct lyd_node_anydata *)data_rpl->data->child;
+            switch (any->value_type) {
+            case LYD_ANYDATA_CONSTSTRING:
+            case LYD_ANYDATA_STRING:
+                fputs(any->value.str, output);
+                break;
+            case LYD_ANYDATA_DATATREE:
+                lyd_print_mem(&model_data, any->value.tree, LYD_XML, LYP_FORMAT | LYP_WITHSIBLINGS);
+                fputs(model_data, output);
+                free(model_data);
+                break;
+            case LYD_ANYDATA_XML:
+                lyxml_print_mem(&model_data, any->value.xml, LYXML_PRINT_SIBLINGS);
+                fputs(model_data, output);
+                free(model_data);
+                break;
+            default:
+                /* none of the others can appear here */
+                printf("Unexpected anydata value format.\n");
+                ret = -1;
+                break;
+            }
+            if (ret == -1) {
+                break;
+            }
+
+            if (output == stdout) {
+                fprintf(output, "\n");
+            }
+            break;
+        }
+
+        if (output == stdout) {
+            fprintf(output, "DATA\n");
+        } else {
+            switch (nc_rpc_get_type(rpc)) {
+            case NC_RPC_GETCONFIG:
+                fprintf(output, "<config xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\">\n");
+                break;
+            case NC_RPC_GET:
+                fprintf(output, "<data xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\">\n");
+                break;
+            default:
+                break;
+            }
+        }
+
+        switch (wd_mode) {
+        case NC_WD_ALL:
+            ly_wd = LYP_WD_ALL;
+            break;
+        case NC_WD_ALL_TAG:
+            ly_wd = LYP_WD_ALL_TAG;
+            break;
+        case NC_WD_TRIM:
+            ly_wd = LYP_WD_TRIM;
+            break;
+        case NC_WD_EXPLICIT:
+            ly_wd = LYP_WD_EXPLICIT;
+            break;
+        default:
+            ly_wd = 0;
+            break;
+        }
+
+        lyd_print_file(output, data_rpl->data, LYD_XML, LYP_WITHSIBLINGS | LYP_NETCONF | ly_wd | output_flag);
+        if (output == stdout) {
+            fprintf(output, "\n");
+        } else {
+            switch (nc_rpc_get_type(rpc)) {
+            case NC_RPC_GETCONFIG:
+                fprintf(output, "</config>\n");
+                break;
+            case NC_RPC_GET:
+                fprintf(output, "</data>\n");
+                break;
+            default:
+                break;
+            }
+        }
+        break;
+    case NC_RPL_ERROR:
+        fprintf(output, "ERROR\n");
+        error = (struct nc_reply_error *)reply;
+        for (i = 0; i < error->count; ++i) {
+            if (error->err[i].type) {
+                fprintf(output, "\ttype:     %s\n", error->err[i].type);
+            }
+            if (error->err[i].tag) {
+                fprintf(output, "\ttag:      %s\n", error->err[i].tag);
+            }
+            if (error->err[i].severity) {
+                fprintf(output, "\tseverity: %s\n", error->err[i].severity);
+            }
+            if (error->err[i].apptag) {
+                fprintf(output, "\tapp-tag:  %s\n", error->err[i].apptag);
+            }
+            if (error->err[i].path) {
+                fprintf(output, "\tpath:     %s\n", error->err[i].path);
+            }
+            if (error->err[i].message) {
+                fprintf(output, "\tmessage:  %s\n", error->err[i].message);
+            }
+            if (error->err[i].sid) {
+                fprintf(output, "\tSID:      %s\n", error->err[i].sid);
+            }
+            for (j = 0; j < error->err[i].attr_count; ++j) {
+                fprintf(output, "\tbad-attr #%d: %s\n", j + 1, error->err[i].attr[j]);
+            }
+            for (j = 0; j < error->err[i].elem_count; ++j) {
+                fprintf(output, "\tbad-elem #%d: %s\n", j + 1, error->err[i].elem[j]);
+            }
+            for (j = 0; j < error->err[i].ns_count; ++j) {
+                fprintf(output, "\tbad-ns #%d:   %s\n", j + 1, error->err[i].ns[j]);
+            }
+            for (j = 0; j < error->err[i].other_count; ++j) {
+                lyxml_print_mem(&str, error->err[i].other[j], 0);
+                fprintf(output, "\tother #%d:\n%s\n", j + 1, str);
+                free(str);
+            }
+            fprintf(output, "\n");
+        }
+        ret = 1;
+        break;
+    default:
+        printf("Internal error.\n");
+        nc_reply_free(reply);
+        return -1;
+    }
+    nc_reply_free(reply);
+
+    if (msgtype == NC_MSG_REPLY_ERR_MSGID) {
+        printf("Trying to receive another message...\n");
+        goto recv_reply;
+    }
+
+    return ret;
+}
+
+
+
+static int rpc_commands(struct t_switch_list *current_switch)
 {
     printf("Hello Libnetconf2!\n");
 
     const char *username = "soc-e";
-    const char *host = "192.168.4.65";
+    const char *host = current_switch->sw.ip;
     uint16_t port = 830;
 
     nc_client_init();
@@ -292,25 +516,26 @@ static int rpc_commands()
     }
 
     FILE *output = NULL;
-    const char * optarg;
+    /*const char * optarg = "temp";
 
     output = fopen(optarg, "w");
     if (!output) {
         printf("Failed to open file %s\n", optarg);
         return -1;
     }
+    print_file(output);*/
 
     int ret = 0;
 
-    /**** TODO ****
+    /**** TODO ***/
     if (output) {
-        ret = cli_send_recv(rpc, output, wd);
+        ret = cli_send_recv(session, rpc, output, wd);
     } else {
-        ret = cli_send_recv(rpc, stdout, wd);
+        ret = cli_send_recv(session, rpc, stdout, wd);
     }
 
     printf("ret: %d\n", ret);
-    */
+
 
     /*******************
      * COPY CONFIG RPC
@@ -350,6 +575,9 @@ int main()
        while (current_switch != NULL)
        {
            xml_write_instance(current_switch);
+
+           rpc_commands(current_switch);
+
            current_switch = current_switch->next;
        }
 
