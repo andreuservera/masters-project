@@ -10,6 +10,9 @@
 #include "json.h"
 #include <ctype.h>
 
+
+struct nc_session *session;
+
 void print_file(FILE *fptr)
 {
     char c;
@@ -182,7 +185,7 @@ static void xml_write_instance(struct t_switch_list * current_switch)
 {
 
     char name_file[MAX_SWITCH_NAME_LENGTH+4];
-    char path[10+MAX_SWITCH_NAME_LENGTH+4] = {"../generated-configs/"};
+    char path[21+MAX_SWITCH_NAME_LENGTH+4] = {"../generated-configs/"};
     sprintf(name_file,"%s.xml", current_switch->sw.name);
     strcat(path, name_file);
     FILE * fpointer = fopen(path,"w");
@@ -257,7 +260,7 @@ static void xml_write_instance(struct t_switch_list * current_switch)
 /* Libnetconf2 functions for rpc's ****************************************/
 /**************************************************************************/
 static int
-cli_send_recv(struct nc_session *session, struct nc_rpc *rpc, FILE *output, NC_WD_MODE wd_mode)
+cli_send_recv(struct nc_rpc *rpc, FILE *output, NC_WD_MODE wd_mode)
 {
     char *str, *model_data;
     int ret = 0, ly_wd, mono;
@@ -275,7 +278,7 @@ cli_send_recv(struct nc_session *session, struct nc_rpc *rpc, FILE *output, NC_W
 
     msgtype = nc_send_rpc(session, rpc, 1000, &msgid);
     if (msgtype == NC_MSG_ERROR) {
-        printf("Failed to send the RPC: rpc_get_config\n");
+        printf("Failed to send the RPC.\n");
         return -1;
     } else if (msgtype == NC_MSG_WOULDBLOCK) {
         printf("Timeout for sending the RPC expired.\n");
@@ -461,19 +464,15 @@ recv_reply:
     return ret;
 }
 
-
-
-static int rpc_commands(struct t_switch_list *current_switch)
+static int init_session(struct t_switch_list *current_switch)
 {
-    printf("Hello Libnetconf2!\n");
-
     const char *username = "soc-e";
     const char *host = current_switch->sw.ip;
     uint16_t port = 830;
 
     nc_client_init();
 
-    struct nc_session *session;
+    //struct nc_session *session;
     struct ly_ctx *ctx;
 
     int rc;
@@ -495,13 +494,10 @@ static int rpc_commands(struct t_switch_list *current_switch)
         printf("Connecting to the %s:%d as user \"%s\" failed.", host, port, username );
         return -1;
     }
+}
 
-
-
-    /*******************
-     * GET CONFIG RPC
-    ********************/
-
+static int rpc_getconfig()
+{
     struct nc_rpc *rpc;
     NC_DATASTORE source = NC_DATASTORE_RUNNING;
 
@@ -529,21 +525,51 @@ static int rpc_commands(struct t_switch_list *current_switch)
 
     /**** TODO ***/
     if (output) {
-        ret = cli_send_recv(session, rpc, output, wd);
+        ret = cli_send_recv(rpc, output, wd);
     } else {
-        ret = cli_send_recv(session, rpc, stdout, wd);
+        ret = cli_send_recv(rpc, stdout, wd);
     }
 
     printf("ret: %d\n", ret);
 
+    nc_rpc_free(rpc);
 
-    /*******************
-     * COPY CONFIG RPC
-    ********************/
+    nc_client_destroy();
+
+    return ret;
+}
+
+
+static int rpc_copyconfig(struct t_switch_list *current_switch)
+{
+
+    struct nc_rpc *rpc;
+    NC_DATASTORE source = NC_DATASTORE_RUNNING;
+
+    char *filter = NULL;
+
+    NC_WD_MODE wd = NC_WD_ALL;
+
     NC_DATASTORE target = NC_DATASTORE_RUNNING;
     const char *trg = NULL, *src = NULL;
     source = NC_DATASTORE_CONFIG;
     wd = NC_WD_UNKNOWN;
+
+    //char * path = "../generated-configs/";
+    //strcat(path, current_switch->sw.name);
+    char name_file[MAX_SWITCH_NAME_LENGTH+4];
+    char path[21+MAX_SWITCH_NAME_LENGTH+4] = {"../generated-configs/"};
+    sprintf(name_file,"%s.xml", current_switch->sw.name);
+    strcat(path, name_file);
+
+
+    src = file_read(path);
+
+    if (src == NULL)
+    {
+        fprintf(stderr, "Can't read %s\n", path);
+        exit(EXIT_FAILURE);
+    }
 
     rpc = nc_rpc_copy(target, trg, source, src, wd, NC_PARAMTYPE_CONST);
     if (!rpc) {
@@ -551,13 +577,17 @@ static int rpc_commands(struct t_switch_list *current_switch)
         return -1;
     }
 
+    int ret;
+
+    ret = cli_send_recv(rpc, stdout, 0);
+
     nc_rpc_free(rpc);
 
     nc_client_destroy();
 
-    printf("GoodBye Libnetconf2!\n");
-    return 0;
+    return ret;
 }
+
 
 int main()
 {
@@ -576,7 +606,9 @@ int main()
        {
            xml_write_instance(current_switch);
 
-           rpc_commands(current_switch);
+           init_session(current_switch);
+           rpc_copyconfig(current_switch);
+           rpc_getconfig();
 
            current_switch = current_switch->next;
        }
