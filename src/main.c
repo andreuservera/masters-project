@@ -13,20 +13,6 @@
 
 struct nc_session *session;
 
-void print_file(FILE *fptr)
-{
-    char c;
-
-    // Read contents from file
-    c = fgetc(fptr);
-    while (c != EOF)
-    {
-        printf ("%c", c);
-        c = fgetc(fptr);
-    }
-
-    fclose(fptr);
-}
 
 /**************************************************************************/
 /* Reading configuration file functions ***********************************/
@@ -257,22 +243,19 @@ static void xml_write_instance(struct t_switch_list * current_switch)
 }
 
 /**************************************************************************/
-/* Libnetconf2 functions for rpc's ****************************************/
+/* Libnetconf2 functions for rpc's (copied and adapted from Netopeer2)*****/
 /**************************************************************************/
 static int
 cli_send_recv(struct nc_rpc *rpc, FILE *output, NC_WD_MODE wd_mode)
 {
     char *str, *model_data;
-    int ret = 0, ly_wd, mono;
-    int32_t msec;
-    uint16_t i, j;
+    int ret = 0, ly_wd;
     uint64_t msgid;
     struct lyd_node_anydata *any;
     NC_MSG_TYPE msgtype;
     struct nc_reply *reply;
     struct nc_reply_data *data_rpl;
     struct nc_reply_error *error;
-    struct timespec ts_start, ts_stop;
     int output_flag = 0;
 
 
@@ -303,8 +286,6 @@ recv_reply:
         nc_reply_free(reply);
         goto recv_reply;
     }
-
-
 
     switch (reply->type) {
     case NC_RPL_OK:
@@ -409,7 +390,7 @@ recv_reply:
     case NC_RPL_ERROR:
         fprintf(output, "ERROR\n");
         error = (struct nc_reply_error *)reply;
-        for (i = 0; i < error->count; ++i) {
+        for (uint16_t i = 0; i < error->count; ++i) {
             if (error->err[i].type) {
                 fprintf(output, "\ttype:     %s\n", error->err[i].type);
             }
@@ -431,16 +412,16 @@ recv_reply:
             if (error->err[i].sid) {
                 fprintf(output, "\tSID:      %s\n", error->err[i].sid);
             }
-            for (j = 0; j < error->err[i].attr_count; ++j) {
+            for (uint16_t j = 0; j < error->err[i].attr_count; ++j) {
                 fprintf(output, "\tbad-attr #%d: %s\n", j + 1, error->err[i].attr[j]);
             }
-            for (j = 0; j < error->err[i].elem_count; ++j) {
+            for (uint16_t j = 0; j < error->err[i].elem_count; ++j) {
                 fprintf(output, "\tbad-elem #%d: %s\n", j + 1, error->err[i].elem[j]);
             }
-            for (j = 0; j < error->err[i].ns_count; ++j) {
+            for (uint16_t j = 0; j < error->err[i].ns_count; ++j) {
                 fprintf(output, "\tbad-ns #%d:   %s\n", j + 1, error->err[i].ns[j]);
             }
-            for (j = 0; j < error->err[i].other_count; ++j) {
+            for (uint16_t j = 0; j < error->err[i].other_count; ++j) {
                 lyxml_print_mem(&str, error->err[i].other[j], 0);
                 fprintf(output, "\tother #%d:\n%s\n", j + 1, str);
                 free(str);
@@ -464,16 +445,12 @@ recv_reply:
     return ret;
 }
 
-static int init_session(struct t_switch_list *current_switch)
+static int init_session(const char *host)
 {
     const char *username = "soc-e";
-    const char *host = current_switch->sw.ip;
     uint16_t port = 830;
 
     nc_client_init();
-
-    //struct nc_session *session;
-    struct ly_ctx *ctx;
 
     int rc;
     rc = nc_client_ssh_set_username(username);
@@ -483,7 +460,6 @@ static int init_session(struct t_switch_list *current_switch)
         printf("Could not set ssh username");
         return -1;
     }
-
 
     nc_client_ssh_set_auth_pref(NC_SSH_AUTH_PASSWORD, 1);
     nc_client_ssh_set_auth_pref(NC_SSH_AUTH_INTERACTIVE, 2);
@@ -496,7 +472,7 @@ static int init_session(struct t_switch_list *current_switch)
     }
 }
 
-static int rpc_getconfig()
+static int rpc_getconfig(const char *switch_name)
 {
     struct nc_rpc *rpc;
     NC_DATASTORE source = NC_DATASTORE_RUNNING;
@@ -511,26 +487,29 @@ static int rpc_getconfig()
         return -1;
     }
 
-    FILE *output = NULL;
-    /*const char * optarg = "temp";
+    FILE *output;
 
-    output = fopen(optarg, "w");
+    char name_file[MAX_SWITCH_NAME_LENGTH+4]={0};
+    char path[21+MAX_SWITCH_NAME_LENGTH+4] = {"../get-config-output/"};
+
+    sprintf(name_file,"%s.xml", switch_name);
+    strcat(path, name_file);
+
+    output = fopen(path, "w");
     if (!output) {
-        printf("Failed to open file %s\n", optarg);
+        printf("Failed to open file %s\n", path);
         return -1;
     }
-    print_file(output);*/
 
     int ret = 0;
 
-    /**** TODO ***/
     if (output) {
         ret = cli_send_recv(rpc, output, wd);
     } else {
         ret = cli_send_recv(rpc, stdout, wd);
     }
 
-    printf("ret: %d\n", ret);
+    fclose(output);
 
     nc_rpc_free(rpc);
 
@@ -540,30 +519,26 @@ static int rpc_getconfig()
 }
 
 
-static int rpc_copyconfig(struct t_switch_list *current_switch)
+static int rpc_copyconfig(const char* switch_name)
 {
 
     struct nc_rpc *rpc;
-    NC_DATASTORE source = NC_DATASTORE_RUNNING;
+    NC_DATASTORE source = NC_DATASTORE_CONFIG;
 
     char *filter = NULL;
 
-    NC_WD_MODE wd = NC_WD_ALL;
+    NC_WD_MODE wd = NC_WD_UNKNOWN;
 
     NC_DATASTORE target = NC_DATASTORE_RUNNING;
-    const char *trg = NULL, *src = NULL;
-    source = NC_DATASTORE_CONFIG;
-    wd = NC_WD_UNKNOWN;
+    const char *trg = NULL;
 
-    //char * path = "../generated-configs/";
-    //strcat(path, current_switch->sw.name);
     char name_file[MAX_SWITCH_NAME_LENGTH+4];
     char path[21+MAX_SWITCH_NAME_LENGTH+4] = {"../generated-configs/"};
-    sprintf(name_file,"%s.xml", current_switch->sw.name);
+    sprintf(name_file,"%s.xml", switch_name);
     strcat(path, name_file);
 
 
-    src = file_read(path);
+    const char *src = file_read(path);
 
     if (src == NULL)
     {
@@ -606,9 +581,9 @@ int main()
        {
            xml_write_instance(current_switch);
 
-           init_session(current_switch);
-           rpc_copyconfig(current_switch);
-           rpc_getconfig();
+           init_session(current_switch->sw.ip);
+           rpc_copyconfig(current_switch->sw.name);
+           rpc_getconfig(current_switch->sw.name);
 
            current_switch = current_switch->next;
        }
