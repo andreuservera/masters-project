@@ -2,6 +2,7 @@
 #define SWITCH_H
 
 #define MAX_SWITCH_NAME_LENGTH 20
+#define MAX_PORT_NAME_LENGTH 20
 #define IP_LENGTH 15
 
 
@@ -20,7 +21,7 @@ struct t_port_values_list
 
 struct t_port
 {
-    int number;
+    char number[MAX_PORT_NAME_LENGTH];
     struct t_port_values_list * values;
 };
 

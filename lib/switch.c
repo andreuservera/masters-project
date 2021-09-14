@@ -133,7 +133,7 @@ void switch_print_list(struct t_switch_list *head)
 
         while (current_port_list != NULL)
         {
-            printf("\tPort Number: %d\n", current_port_list->port.number);
+            printf("\tPort Number: %s\n", current_port_list->port.number);
 
             struct t_port_values_list *current_port_values_list = current_port_list->port.values;
 

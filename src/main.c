@@ -97,7 +97,8 @@ static void read_json(const json *node, void* list)
                 struct t_port current_port;
                 current_port.values = switch_create_port_values_list();
 
-                current_port.number = (int)json_real(json_node(n_port, "port_number"));
+//                current_port.number = json_string(json_node(n_port, "port_number"));
+                strcpy(current_port.number, json_string(json_node(n_port, "port_number")));
                 read_values(json_node(n_port, "values"), current_port.values);
 
                 port_push(current_switch.port_list, current_port);
@@ -117,10 +118,10 @@ static void read_json(const json *node, void* list)
 /**************************************************************************/
 /* Write XML Instance Functions********************************************/
 /**************************************************************************/
-static void xml_write_port(FILE * file_pointer, int port_number, int admin_control_list_length)
+static void xml_write_port(FILE * file_pointer, char *port_number, int admin_control_list_length)
 {
     fprintf(file_pointer, "\t<if:interface>\n");
-    fprintf(file_pointer, "\t\t<if:name>%d</if:name>\n",port_number);
+    fprintf(file_pointer, "\t\t<if:name>%s</if:name>\n", port_number);
     fprintf(file_pointer, "\t\t<if:type xmlns:iftype=\"urn:ietf:params:xml:ns:yang:iana-if-type\">iftype:ethernetCsmacd</if:type>\n");
     for (int i=0; i<8; i++){
         fprintf(file_pointer, "\t\t<sched:max-sdu-table xmlns:sched=\"urn:ieee:std:802.1Q:yang:ieee802-dot1q-sched\">\n");
