@@ -148,6 +148,8 @@ void switch_print_list(struct t_switch_list *head)
             current_port_list = current_port_list->next;
         }
 
+        printf("\tCycle time: %lu\n", current_sw_list->sw.cycle_time);
+
         current_sw_list = current_sw_list->next;
     }
 }

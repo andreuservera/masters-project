@@ -97,7 +97,6 @@ static void read_json(const json *node, void* list)
                 struct t_port current_port;
                 current_port.values = switch_create_port_values_list();
 
-//                current_port.number = json_string(json_node(n_port, "port_number"));
                 strcpy(current_port.number, json_string(json_node(n_port, "port_number")));
                 read_values(json_node(n_port, "values"), current_port.values);
 
@@ -107,6 +106,18 @@ static void read_json(const json *node, void* list)
         else
         {
             printf("[ERROR]Missing port list in switch [%s]...\n", json_string(data_switch));
+            exit(1);
+        }
+
+        json *data_cycle_time = json_node(node, "cycle_time");
+        if (json_is_number(data_cycle_time))
+        {
+            current_switch.cycle_time = json_number(data_cycle_time);
+//            strcpy(current_switch.cycle_time, json_string(data_cycle_time));
+        }
+        else
+        {
+            printf("[ERROR]Missing cycle time in switch [%s]...\n", json_string(data_switch));
             exit(1);
         }
 
@@ -149,14 +160,12 @@ static void xml_write_values(FILE * file_pointer, unsigned long period, int gate
     fprintf(file_pointer, "\t\t\t</sched:admin-control-list>\n");
 }
 
-static void xml_write_values_end(FILE * file_pointer, float hypercycle)
-{
-    float denominator;
 
+static void xml_write_values_end(FILE * file_pointer, unsigned long hypercycle)
+{
     fprintf(file_pointer, "\t\t\t<sched:admin-cycle-time>\n");
-    fprintf(file_pointer, "\t\t\t\t<sched:numerator>500</sched:numerator>\n");
-    denominator = 500.0f/hypercycle;
-    fprintf(file_pointer, "\t\t\t\t<sched:denominator>%d</sched:denominator>\n", (int)denominator);
+    fprintf(file_pointer, "\t\t\t\t<sched:numerator>%lu</sched:numerator>\n", hypercycle);
+    fprintf(file_pointer, "\t\t\t\t<sched:denominator>1</sched:denominator>\n");
     fprintf(file_pointer, "\t\t\t</sched:admin-cycle-time>\n");
     fprintf(file_pointer, "\t\t\t<sched:admin-base-time>\n");
     fprintf(file_pointer, "\t\t\t\t<sched:seconds>0</sched:seconds>\n");
@@ -232,7 +241,7 @@ static void xml_write_instance(struct t_switch_list * current_switch)
             current_port_values_list = current_port_values_list->next;
         }
 
-        xml_write_values_end(fpointer, hypercycle);
+        xml_write_values_end(fpointer, current_switch->sw.cycle_time);
         current_port_list = current_port_list->next;
     }
 
