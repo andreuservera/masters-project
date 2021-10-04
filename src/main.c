@@ -97,6 +97,7 @@ static void read_json(const json *node, void* list)
                 struct t_port current_port;
                 current_port.values = switch_create_port_values_list();
 
+//                current_port.number = json_string(json_node(n_port, "port_number"));
                 strcpy(current_port.number, json_string(json_node(n_port, "port_number")));
                 read_values(json_node(n_port, "values"), current_port.values);
 
@@ -106,18 +107,6 @@ static void read_json(const json *node, void* list)
         else
         {
             printf("[ERROR]Missing port list in switch [%s]...\n", json_string(data_switch));
-            exit(1);
-        }
-
-        json *data_cycle_time = json_node(node, "cycle_time");
-        if (json_is_number(data_cycle_time))
-        {
-            current_switch.cycle_time = json_number(data_cycle_time);
-//            strcpy(current_switch.cycle_time, json_string(data_cycle_time));
-        }
-        else
-        {
-            printf("[ERROR]Missing cycle time in switch [%s]...\n", json_string(data_switch));
             exit(1);
         }
 
@@ -142,7 +131,7 @@ static void xml_write_port(FILE * file_pointer, char *port_number, int admin_con
     }
     fprintf(file_pointer, "\t\t<sched:gate-parameters xmlns:sched=\"urn:ieee:std:802.1Q:yang:ieee802-dot1q-sched\">\n");
     fprintf(file_pointer, "\t\t\t<sched:gate-enabled>true</sched:gate-enabled>\n");
-    fprintf(file_pointer, "\t\t\t<sched:admin-gate-states>0</sched:admin-gate-states>\n");	//0..7
+    fprintf(file_pointer, "\t\t\t<sched:admin-gate-states>255</sched:admin-gate-states>\n");	//0..7
     fprintf(file_pointer, "\t\t\t<sched:admin-control-list-length>%d</sched:admin-control-list-length>\n", admin_control_list_length);
 
     return;
@@ -160,12 +149,11 @@ static void xml_write_values(FILE * file_pointer, unsigned long period, int gate
     fprintf(file_pointer, "\t\t\t</sched:admin-control-list>\n");
 }
 
-
 static void xml_write_values_end(FILE * file_pointer, unsigned long hypercycle)
 {
     fprintf(file_pointer, "\t\t\t<sched:admin-cycle-time>\n");
-    fprintf(file_pointer, "\t\t\t\t<sched:numerator>%lu</sched:numerator>\n", hypercycle);
-    fprintf(file_pointer, "\t\t\t\t<sched:denominator>1</sched:denominator>\n");
+    fprintf(file_pointer, "\t\t\t\t<sched:numerator>%lu</sched:numerator>\n", hypercycle/2000);
+    fprintf(file_pointer, "\t\t\t\t<sched:denominator>500000</sched:denominator>\n");
     fprintf(file_pointer, "\t\t\t</sched:admin-cycle-time>\n");
     fprintf(file_pointer, "\t\t\t<sched:admin-base-time>\n");
     fprintf(file_pointer, "\t\t\t\t<sched:seconds>0</sched:seconds>\n");
@@ -192,27 +180,21 @@ static void xml_write_instance(struct t_switch_list * current_switch)
 
     struct t_port_list *current_port_list = current_switch->sw.port_list;
 
-    float hypercycle = 0;
-
-    while (current_port_list != NULL)
-    {
-        struct t_port_values_list *current_values_list = current_port_list->port.values;
-
-        while (current_values_list != NULL)
-        {
-            hypercycle =+ (float)current_values_list->values.period;
-            current_values_list = current_values_list->next;
-        }
-
-        current_port_list = current_port_list->next;
-    }
-
-
     current_port_list = current_switch->sw.port_list;
 
 
     while (current_port_list != NULL)
     {
+        unsigned long hypercycle = 0;
+
+        struct t_port_values_list *current_values_list = current_port_list->port.values;
+
+        while (current_values_list != NULL)
+        {
+            hypercycle += (float)current_values_list->values.period;
+            current_values_list = current_values_list->next;
+        }
+
         struct t_port_values_list *current_port_values_list = current_port_list->port.values;
 
         // Calculate admin_control_list_length
@@ -241,7 +223,7 @@ static void xml_write_instance(struct t_switch_list * current_switch)
             current_port_values_list = current_port_values_list->next;
         }
 
-        xml_write_values_end(fpointer, current_switch->sw.cycle_time);
+        xml_write_values_end(fpointer, hypercycle);
         current_port_list = current_port_list->next;
     }
 
@@ -578,7 +560,8 @@ int main()
 {
     struct t_switch_list* switch_list = switch_create_list();
 
-       json *node = parse("../config.json");
+       //json *node = parse("../config.json"); // outside docker
+       json *node = parse("../../../shared/config.json"); // inside docker
        json_foreach(node, (void*)switch_list, read_json);
        json_free(node);
 
