@@ -131,7 +131,7 @@ static void xml_write_port(FILE * file_pointer, char *port_number, int admin_con
     }
     fprintf(file_pointer, "\t\t<sched:gate-parameters xmlns:sched=\"urn:ieee:std:802.1Q:yang:ieee802-dot1q-sched\">\n");
     fprintf(file_pointer, "\t\t\t<sched:gate-enabled>true</sched:gate-enabled>\n");
-    fprintf(file_pointer, "\t\t\t<sched:admin-gate-states>0</sched:admin-gate-states>\n");	//0..7
+    fprintf(file_pointer, "\t\t\t<sched:admin-gate-states>255</sched:admin-gate-states>\n");	//0..7
     fprintf(file_pointer, "\t\t\t<sched:admin-control-list-length>%d</sched:admin-control-list-length>\n", admin_control_list_length);
 
     return;
@@ -149,14 +149,11 @@ static void xml_write_values(FILE * file_pointer, unsigned long period, int gate
     fprintf(file_pointer, "\t\t\t</sched:admin-control-list>\n");
 }
 
-static void xml_write_values_end(FILE * file_pointer, float hypercycle)
+static void xml_write_values_end(FILE * file_pointer, unsigned long hypercycle)
 {
-    float denominator;
-
     fprintf(file_pointer, "\t\t\t<sched:admin-cycle-time>\n");
-    fprintf(file_pointer, "\t\t\t\t<sched:numerator>500</sched:numerator>\n");
-    denominator = 500.0f/hypercycle;
-    fprintf(file_pointer, "\t\t\t\t<sched:denominator>%d</sched:denominator>\n", (int)denominator);
+    fprintf(file_pointer, "\t\t\t\t<sched:numerator>%lu</sched:numerator>\n", hypercycle/2000);
+    fprintf(file_pointer, "\t\t\t\t<sched:denominator>500000</sched:denominator>\n");
     fprintf(file_pointer, "\t\t\t</sched:admin-cycle-time>\n");
     fprintf(file_pointer, "\t\t\t<sched:admin-base-time>\n");
     fprintf(file_pointer, "\t\t\t\t<sched:seconds>0</sched:seconds>\n");
@@ -183,27 +180,21 @@ static void xml_write_instance(struct t_switch_list * current_switch)
 
     struct t_port_list *current_port_list = current_switch->sw.port_list;
 
-    float hypercycle = 0;
-
-    while (current_port_list != NULL)
-    {
-        struct t_port_values_list *current_values_list = current_port_list->port.values;
-
-        while (current_values_list != NULL)
-        {
-            hypercycle =+ (float)current_values_list->values.period;
-            current_values_list = current_values_list->next;
-        }
-
-        current_port_list = current_port_list->next;
-    }
-
-
     current_port_list = current_switch->sw.port_list;
 
 
     while (current_port_list != NULL)
     {
+        unsigned long hypercycle = 0;
+
+        struct t_port_values_list *current_values_list = current_port_list->port.values;
+
+        while (current_values_list != NULL)
+        {
+            hypercycle += (float)current_values_list->values.period;
+            current_values_list = current_values_list->next;
+        }
+
         struct t_port_values_list *current_port_values_list = current_port_list->port.values;
 
         // Calculate admin_control_list_length
