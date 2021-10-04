@@ -5,3 +5,6 @@ build-cnc-Imported_Kit_temporary-Debug/
 generated-configs/
 *.user
 
+/config.json_old
+
+
