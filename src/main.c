@@ -560,7 +560,8 @@ int main()
 {
     struct t_switch_list* switch_list = switch_create_list();
 
-       json *node = parse("../config.json");
+       //json *node = parse("../config.json"); // outside docker
+       json *node = parse("../../../shared/config.json"); // inside docker
        json_foreach(node, (void*)switch_list, read_json);
        json_free(node);
 
