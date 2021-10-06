@@ -37,7 +37,6 @@ struct t_switch
     char name[MAX_SWITCH_NAME_LENGTH];
     char ip[IP_LENGTH];
     struct t_port_list * port_list;
-    unsigned long cycle_time;
 };
 
 struct t_switch_list
