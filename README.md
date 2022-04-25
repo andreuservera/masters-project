@@ -1,4 +1,10 @@
-# cnc
+# Centralized Network Controller - CNC
+
+This repository contains de Centralized Network Controller developed for the Master's final project:
+
+## Development of a Centralized Network Controller and mechanisms for its Duplication over Time-Sensitive Networking (TSN) Ethernet Networks.
+
+
 
 ### Build docker image
 `docker build --rm -t <name> .`
